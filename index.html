@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>AHRP POS TERMINAL</title>
+    <!-- Paste the CSS from my previous message here inside <style> tags -->
+</head>
+<body>
+
+    <!-- 1. NAVIGATION -->
+    <div class="tabs-nav">
+        <button class="tab-btn active" onclick="switchView('pos-tab')">Point of Sale</button>
+        <button class="tab-btn" onclick="switchView('history-tab')">Archive Ledger</button>
+        <button class="tab-btn" onclick="switchView('analytics-tab')">Consumption Metrics</button>
+        <button class="tab-btn" onclick="switchView('customer-tab')">Profile Management</button>
+        <button class="tab-btn" onclick="switchView('menu-tab')">Menu Configuration</button>
+    </div>
+
+    <!-- 2. CONTENT SECTIONS -->
+    <div id="pos-tab" class="tab-content active">
+        <!-- POS Grid, Cart, and Log components go here -->
+    </div>
+    
+    <div id="history-tab" class="tab-content">
+        <div id="history-container" class="history-grid-layout"></div>
+    </div>
+    
+    <!-- Include other sections (Analytics, Customer, Menu) -->
+
+    <!-- 3. PRINTING LAYER -->
+    <div id="print-area"></div>
+
+    <!-- 4. SECURITY MODALS -->
+    <div id="security-pin-modal" class="modal-overlay">
+        <!-- Modal content -->
+    </div>
+
+    <!-- Paste the Javascript from my previous message here inside <script> tags -->
+</body>
+</html>
