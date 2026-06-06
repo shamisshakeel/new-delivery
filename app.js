@@ -1,33 +1,146 @@
 /**
- * Ahmed Hanif Rajput Pakwan - Point of Sale Software Module
- * GitHub Target Version: Refactored Production Build
+ * AHMED HANIF RAJPUT (AHRP) - POS TERMINAL CORE ENGINE
+ * Complete Consolidated Production Script
  */
 
-// Application Scope Global Core Memory Registers
-let customItems = JSON.parse(localStorage.getItem('categorizedMenu')) || [];
+// --- CORE SYSTEM REGISTRIES & STATE BASELINES ---
+let customItems = JSON.parse(localStorage.getItem('categorizedMenu')) || [
+    { name: "Chicken Biryani", category: "Rice", weight: 500 },
+    { name: "Mutton Qorma", category: "Curry", weight: 250 },
+    { name: "Plain Naan", category: "Bread", weight: 120 },
+    { name: "Raita", category: "Others", weight: 50 }
+];
+
 let currentDayLog = JSON.parse(localStorage.getItem('currentDayLog')) || [];
 let currentRefundLog = JSON.parse(localStorage.getItem('currentRefundLog')) || [];
 let allTimeHistory = JSON.parse(localStorage.getItem('allTimeHistory')) || [];
-let knownCustomers = JSON.parse(localStorage.getItem('knownCustomers')) || [];
+let knownCustomers = JSON.parse(localStorage.getItem('knownCustomers')) || ["Walk-In"];
 let shiftStartTime = localStorage.getItem('shiftStartTime') || null;
 
 let currentCart = {};
 let currentActiveCategory = "All";
 let activeCustomerSearchQuery = "";
+let pendingPinCallback = null;
+let currentModalPinType = "";
 
-// System Level Date Utilities
-function getFormattedSystemDate(targetDate = new Date()) {
-    return targetDate.toLocaleDateString('en-GB').replace(/\//g, '-');
+// --- UTILITY DATE FORMATTING MATRIX ---
+function getFormattedSystemDate(dateObj = new Date()) {
+    return dateObj.toLocaleDateString('en-GB').replace(/\//g, '-');
 }
 
-function normalizeToSystemDate(dateString) {
-    if (!dateString) return getFormattedSystemDate();
-    return dateString.replace(/\//g, '-');
+function normalizeToSystemDate(dateStr) {
+    if (!dateStr) return getFormattedSystemDate();
+    return dateStr.replace(/\//g, '-');
 }
 
-// System Backup and Data Restoration System Engines
+// --- SECURITY PIN AUTHORIZATION MODALS ---
+function openPinModal(alertText, pinType, callback) {
+    const modal = document.getElementById('security-pin-modal');
+    const alertLabel = document.getElementById('modal-pin-alert-text');
+    const pinInput = document.getElementById('modal-pin-input');
+    
+    if (!modal) {
+        // Fallback if DOM element is missing to prevent total locking loops
+        let pin = prompt(`${alertText}\nEnter Access Code:`);
+        if ((pinType === "admin" && pin === "7860") || (pinType === "refund" && pin === "1122")) {
+            callback();
+        } else {
+            alert("Invalid Security Code.");
+        }
+        return;
+    }
+
+    alertLabel.innerText = alertText;
+    pinInput.value = '';
+    currentModalPinType = pinType;
+    pendingPinCallback = callback;
+    modal.style.display = 'flex';
+    pinInput.focus();
+}
+
+function closePinModal() {
+    const modal = document.getElementById('security-pin-modal');
+    if (modal) modal.style.display = 'none';
+    pendingPinCallback = null;
+    currentModalPinType = "";
+}
+
+function submitPinModal() {
+    const pinInput = document.getElementById('modal-pin-input');
+    const pinVal = pinInput.value.trim();
+    
+    let isAuthorized = false;
+    if (currentModalPinType === "admin" && pinVal === "7860") isAuthorized = true;
+    if (currentModalPinType === "refund" && pinVal === "1122") isAuthorized = true;
+
+    if (isAuthorized) {
+        const callback = pendingPinCallback;
+        closePinModal();
+        if (callback) callback();
+    } else {
+        alert("CRITICAL: Invalid security clearance identifier key tokens.");
+        pinInput.value = '';
+        pinInput.focus();
+    }
+}
+
+// --- FUZZY MATCH INTERCEPTOR (LEVENSHTEIN MATCHING) ---
+function findClosestCustomerName(inputName) {
+    let cleanedInput = inputName.trim().toLowerCase();
+    if (!cleanedInput) return null;
+
+    let bestMatch = null;
+    let bestDistance = 999;
+    const maxThreshold = 3; // Maximum character mutations allowed
+
+    knownCustomers.forEach(customer => {
+        let cleanedCustomer = customer.toLowerCase();
+        if (cleanedInput === cleanedCustomer) {
+            bestMatch = customer;
+            bestDistance = 0;
+        }
+    });
+
+    if (bestDistance === 0) return bestMatch;
+
+    // Levenshtein Matrix evaluation
+    knownCustomers.forEach(customer => {
+        let target = customer.toLowerCase();
+        let distance = getLevenshteinDistance(cleanedInput, target);
+        if (distance < bestDistance && distance <= maxThreshold) {
+            bestDistance = distance;
+            bestMatch = customer;
+        }
+    });
+
+    return bestMatch;
+}
+
+function getLevenshteinDistance(s1, s2) {
+    let costs = [];
+    for (let i = 0; i <= s1.length; i++) {
+        let lastValue = i;
+        for (let j = 0; j <= s2.length; j++) {
+            if (i == 0) costs[j] = j;
+            else {
+                if (j > 0) {
+                    let newValue = costs[j - 1];
+                    if (s1.charAt(i - 1) != s2.charAt(j - 1)) {
+                        newValue = Math.min(Math.min(newValue, lastValue), costs[j]) + 1;
+                    }
+                    costs[j - 1] = lastValue;
+                    lastValue = newValue;
+                }
+            }
+        }
+        if (i > 0) costs[s2.length] = lastValue;
+    }
+    return costs[s2.length];
+}
+
+// --- DATABASE OPERATIONS (JSON STORAGE ENGINE) ---
 function exportSystemBackupJSON() {
-    const backupPayload = {
+    let backupPayload = {
         categorizedMenu: customItems,
         currentDayLog: currentDayLog,
         currentRefundLog: currentRefundLog,
@@ -36,68 +149,58 @@ function exportSystemBackupJSON() {
         shiftStartTime: shiftStartTime
     };
     
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupPayload, null, 2));
-    const downloadAnchor = document.createElement('a');
+    let dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupPayload, null, 2));
+    let downloadAnchor = document.createElement('a');
     downloadAnchor.setAttribute("href", dataStr);
-    downloadAnchor.setAttribute("download", `AHRP_POS_SYSTEM_BACKUP_${new Date().toISOString().slice(0,10)}.json`);
+    downloadAnchor.setAttribute("download", `AHRP_POS_SYSTEM_BACKUP_${getFormattedSystemDate()}.json`);
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     document.body.removeChild(downloadAnchor);
 }
 
 function importSystemBackupJSON() {
-    const fileInput = document.getElementById('import-backup-file');
+    let fileInput = document.getElementById('import-backup-file');
     if (!fileInput || fileInput.files.length === 0) {
         alert("Please select a valid (.json) backup database template file first.");
         return;
     }
     
-    if (!confirm("CRITICAL WARNING: This action will completely overwrite all local application data, current shift data, history ledgers, and configurations. Proceed?")) {
+    if (!confirm("CRITICAL WARNING: This action will completely overwrite all local application data, history ledgers, and configurations. Proceed?")) {
         return;
     }
     
-    const selectedFile = fileInput.files[0];
-    const reader = new FileReader();
+    let selectedFile = fileInput.files[0];
+    let reader = new FileReader();
     reader.onload = function(event) {
         try {
-            const parsedData = JSON.parse(event.target.result);
+            let parsedData = JSON.parse(event.target.result);
             
             if (!parsedData.categorizedMenu || !parsedData.knownCustomers || !parsedData.allTimeHistory) {
-                throw new Error("Invalid schema tracking configuration variables.");
+                throw new Error("Invalid schema tracking configuration variables missing core objects.");
             }
             
-            // Sync Local Storage
             localStorage.setItem('categorizedMenu', JSON.stringify(parsedData.categorizedMenu));
             localStorage.setItem('currentDayLog', JSON.stringify(parsedData.currentDayLog || []));
             localStorage.setItem('currentRefundLog', JSON.stringify(parsedData.currentRefundLog || []));
             localStorage.setItem('allTimeHistory', JSON.stringify(parsedData.allTimeHistory || []));
             localStorage.setItem('knownCustomers', JSON.stringify(parsedData.knownCustomers || []));
-            
             if (parsedData.shiftStartTime) {
                 localStorage.setItem('shiftStartTime', parsedData.shiftStartTime);
             } else {
                 localStorage.removeItem('shiftStartTime');
             }
             
-            // Memory State Core Override Synchronization
-            customItems = parsedData.categorizedMenu;
-            currentDayLog = parsedData.currentDayLog || [];
-            currentRefundLog = parsedData.currentRefundLog || [];
-            allTimeHistory = parsedData.allTimeHistory || [];
-            knownCustomers = parsedData.knownCustomers || [];
-            shiftStartTime = parsedData.shiftStartTime || null;
-            
             alert("Database Memory Override Successfully Restored!");
-            window.location.reload(); 
+            location.reload(); 
             
-        } catch (err) {
+        } catch(err) {
             alert("Error parsing memory file: Invalid or corrupted JSON backup package schema layout.\n" + err.message);
         }
     };
     reader.readAsText(selectedFile);
 }
 
-// Active Mass Configuration Metrics Grid Matrix
+// --- DINAMIC MASS MAS_MULTIPLIER CONFIGURATION LAYER ---
 function renderMenuWeightsManagement() {
     const container = document.getElementById('menu-weights-management-container');
     if (!container) return;
@@ -114,7 +217,6 @@ function renderMenuWeightsManagement() {
             </tr>
         </thead>
         <tbody>`;
-        
     customItems.forEach((itemObj, index) => {
         table += `<tr>
             <td style="font-weight:600; color:var(--text-main);">${itemObj.name}</td>
@@ -132,80 +234,29 @@ function renderMenuWeightsManagement() {
 }
 
 function updateItemWeightRow(index) {
-    const inputField = document.getElementById(`weight-input-${index}`);
-    if (!inputField) return;
-    
-    const newW = parseInt(inputField.value, 10);
+    let inputField = document.getElementById(`weight-input-${index}`);
+    let newW = parseInt(inputField.value);
     if (isNaN(newW) || newW < 0) {
         alert("Entry out of bounds range parameters.");
         return;
     }
-    
     customItems[index].weight = newW;
     localStorage.setItem('categorizedMenu', JSON.stringify(customItems));
     alert(`Retroactive execution mapping successful. Item weight altered to ${newW}g.`);
-    
     renderMenu();
     updateLiveBreakdown();
 }
 
-// Fuzzy Levenshtein Distance Algorithmic Helper Block
-function findClosestCustomerName(query) {
-    if (!query || knownCustomers.length === 0) return null;
-    let closestMatch = null;
-    let minDistance = 3; // Strict Threshold
-    
-    const cleanQuery = query.trim().toLowerCase();
-    
-    for (let name of knownCustomers) {
-        let cleanName = name.trim().toLowerCase();
-        if (cleanName === cleanQuery) return name;
-        
-        // Basic Levenshtein Evaluation Core implementation
-        let distance = calculateLevenshtein(cleanQuery, cleanName);
-        if (distance < minDistance) {
-            minDistance = distance;
-            closestMatch = name;
-        }
-    }
-    return closestMatch;
-}
-
-function calculateLevenshtein(a, b) {
-    const matrix = [];
-    for (let i = 0; i <= b.length; i++) matrix[i] = [i];
-    for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
-    
-    for (let i = 1; i <= b.length; i++) {
-        for (let j = 1; j <= a.length; j++) {
-            if (b.charAt(i - 1) === a.charAt(j - 1)) {
-                matrix[i][j] = matrix[i - 1][j - 1];
-            } else {
-                matrix[i][j] = Math.min(
-                    matrix[i - 1][j - 1] + 1,
-                    matrix[i][j - 1] + 1,
-                    matrix[i - 1][j] + 1
-                );
-            }
-        }
-    }
-    return matrix[b.length][a.length];
-}
-
-// Profile Master Ledger Management Actions Loop
+// --- CUSTOMERS LAYER MANUAL INTRUSIONS ---
 function addCustomerManually() {
-    const input = document.getElementById('new-manual-customer');
+    let input = document.getElementById('new-manual-customer');
     if (!input) return;
-    
-    const name = input.value.trim().replace(/\b\w/g, char => char.toUpperCase());
+    let name = input.value.trim().replace(/\b\w/g, char => char.toUpperCase());
     if (!name) return;
-    
     if (!knownCustomers.includes(name)) {
         knownCustomers.push(name);
         localStorage.setItem('knownCustomers', JSON.stringify(knownCustomers));
-        
-        if (typeof populateCustomerDatalist === "function") populateCustomerDatalist();
-        if (typeof populateMergeDropdowns === "function") populateMergeDropdowns();
+        populateCustomerDatalist();
         renderCustomerManagement();
         input.value = '';
     } else {
@@ -214,16 +265,14 @@ function addCustomerManually() {
 }
 
 function editCustomer(index) {
-    const oldName = knownCustomers[index];
-    const newName = prompt("Alter tracked profile allocation header string:", oldName);
+    let oldName = knownCustomers[index];
+    let newName = prompt("Alter tracked profile allocation header string:", oldName);
     if (!newName || newName.trim() === "" || newName.trim() === oldName) return;
-    
-    const formattedName = newName.trim().replace(/\b\w/g, char => char.toUpperCase());
+    let formattedName = newName.trim().replace(/\b\w/g, char => char.toUpperCase());
     if (knownCustomers.includes(formattedName) && formattedName !== oldName) {
         alert("Target token value collision identifier detected.");
         return;
     }
-    
     knownCustomers[index] = formattedName;
     localStorage.setItem('knownCustomers', JSON.stringify(knownCustomers));
     
@@ -237,32 +286,28 @@ function editCustomer(index) {
     });
     localStorage.setItem('allTimeHistory', JSON.stringify(allTimeHistory));
     
-    if (typeof populateCustomerDatalist === "function") populateCustomerDatalist();
-    if (typeof populateMergeDropdowns === "function") populateMergeDropdowns();
+    populateCustomerDatalist();
     renderCustomerManagement();
     renderLogs();
 }
 
 function deleteCustomer(index) {
-    const targetName = knownCustomers[index];
+    let targetName = knownCustomers[index];
+    if (targetName === "Walk-In") return alert("Cannot drop core system default baseline identity profile mapping.");
     if (confirm(`Wipe "${targetName}" identity mapping block trace completely?`)) {
         knownCustomers.splice(index, 1);
         localStorage.setItem('knownCustomers', JSON.stringify(knownCustomers));
-        
-        if (typeof populateCustomerDatalist === "function") populateCustomerDatalist();
-        if (typeof populateMergeDropdowns === "function") populateMergeDropdowns();
+        populateCustomerDatalist();
         renderCustomerManagement();
     }
 }
 
 function openCustomerModal() {
-    const inputField = document.getElementById('cust-modal-name-input');
     const modal = document.getElementById('customer-name-modal');
-    if (inputField && modal) {
-        inputField.value = '';
-        modal.style.display = 'flex';
-        inputField.focus();
-    }
+    const input = document.getElementById('cust-modal-name-input');
+    if (input) input.value = '';
+    if (modal) modal.style.display = 'flex';
+    if (input) input.focus();
 }
 
 function closeCustomerModal() { 
@@ -271,38 +316,34 @@ function closeCustomerModal() {
 }
 
 function submitCustomerModal() {
-    const inputElement = document.getElementById('cust-modal-name-input');
-    if (!inputElement) return;
-    
-    const rawName = inputElement.value.trim();
+    let rawName = document.getElementById('cust-modal-name-input').value.trim();
     if (rawName === "") {
-        alert("Valid identification matrix required.");
-        return;
+        alert("Valid identification matrix required. Defaulting to Walk-In.");
+        rawName = "Walk-In";
     }
     
     let finalName = "";
-    const matchedName = findClosestCustomerName(rawName);
+    let matchedName = findClosestCustomerName(rawName);
     if (matchedName) {
         finalName = matchedName;
     } else {
         finalName = rawName.replace(/\b\w/g, char => char.toUpperCase());
         knownCustomers.push(finalName);
         localStorage.setItem('knownCustomers', JSON.stringify(knownCustomers));
-        if (typeof populateCustomerDatalist === "function") populateCustomerDatalist(); 
+        populateCustomerDatalist(); 
     }
     closeCustomerModal();
     executeTokenPrinting(finalName); 
 }
 
-// POS Grid Generator Blocks & Cart Actions
+// --- POS GRID GENERATORS & CART COMPONENT MANAGEMENT ---
 function renderCategoryFilters() {
     const container = document.getElementById('category-filter-container');
     if (!container) return;
     container.innerHTML = '';
-    
-    const categories = ["All", "Rice", "Curry", "Bread", "Others"];
+    let categories = ["All", "Rice", "Curry", "Bread", "Others"];
     categories.forEach(cat => {
-        const btn = document.createElement('button');
+        let btn = document.createElement('button');
         btn.className = `category-filter-btn ${currentActiveCategory === cat ? 'active' : ''}`;
         btn.innerText = cat;
         btn.onclick = () => {
@@ -315,12 +356,12 @@ function renderCategoryFilters() {
 }
 
 function getItemCategory(itemName) {
-    const found = customItems.find(i => i.name.toLowerCase() === itemName.toLowerCase());
+    let found = customItems.find(i => i.name.toLowerCase() === itemName.toLowerCase());
     return found ? found.category : "Others";
 }
 
 function getItemWeight(itemName) {
-    const found = customItems.find(i => i.name.toLowerCase() === itemName.toLowerCase());
+    let found = customItems.find(i => i.name.toLowerCase() === itemName.toLowerCase());
     return found && found.weight ? parseFloat(found.weight) : 0;
 }
 
@@ -328,10 +369,9 @@ function renderMenu() {
     const grid = document.getElementById('items-grid');
     if (!grid) return;
     grid.innerHTML = '';
-    
-    customItems.forEach((itemObj) => {
+    customItems.forEach((itemObj, index) => {
         if (currentActiveCategory !== "All" && itemObj.category !== currentActiveCategory) return;
-        const card = document.createElement('div');
+        let card = document.createElement('div');
         card.className = 'menu-card';
         card.innerText = itemObj.name;
         card.onclick = () => { addToCart(itemObj.name); };
@@ -343,20 +383,17 @@ function addNewItem() {
     const nameInput = document.getElementById('new-item-name');
     const catSelect = document.getElementById('new-item-category');
     const weightInput = document.getElementById('new-item-weight');
-    
     if (!nameInput || !catSelect || !weightInput) return;
-    
+
     const name = nameInput.value.trim();
-    const weight = parseInt(weightInput.value, 10) || 0;
+    const weight = parseInt(weightInput.value) || 0;
     if (!name) return;
     
     customItems.push({ name: name, category: catSelect.value, weight: weight });
     localStorage.setItem('categorizedMenu', JSON.stringify(customItems));
-    
     nameInput.value = '';
     weightInput.value = '';
     alert(`Successfully mapped item allocation array schema instance.`);
-    
     renderMenu();
     renderMenuWeightsManagement();
 }
@@ -365,14 +402,12 @@ function renderCart() {
     const container = document.getElementById('cart-container');
     if (!container) return;
     container.innerHTML = '';
-    
     if (Object.keys(currentCart).length === 0) {
         container.innerHTML = '<p style="color:#94a3b8; text-align:center; padding-top:45px; margin:0; font-size: 13px;">Queue Array Buffer Allocation Empty</p>';
         return;
     }
-    
     for (let item in currentCart) {
-        const div = document.createElement('div');
+        let div = document.createElement('div');
         div.className = 'cart-row';
         div.innerHTML = `
             <span style="font-weight: 600;">${item}</span>
@@ -398,29 +433,20 @@ function changeQty(item, amount) {
     renderCart();
 }
 
-// Live Vector Processing Engine
+// --- DYNAMIC LIVE BREAKDOWN BREAKS & METRICS LOG VISIBILITY ---
 function updateLiveBreakdown() {
     const container = document.getElementById('live-total-container');
     if (!container) return;
-    
     if (currentDayLog.length === 0 && currentRefundLog.length === 0) {
         container.innerHTML = '<p style="color:#94a3b8; text-align:center; margin:0; font-size:13px;">Live operational transaction vectors empty.</p>';
         return;
     }
-    
-    let grossCount = 0; 
-    let refundCount = 0; 
-    let itemTotals = {};
+    let grossCount = 0; let refundCount = 0; let itemTotals = {};
 
-    currentDayLog.forEach(log => { 
-        grossCount += log.qty; 
-        itemTotals[log.item] = (itemTotals[log.item] || 0) + log.qty; 
-    });
-    currentRefundLog.forEach(log => { 
-        refundCount += log.qty; 
-    });
+    currentDayLog.forEach(log => { grossCount += log.qty; itemTotals[log.item] = (itemTotals[log.item] || 0) + log.qty; });
+    currentRefundLog.forEach(log => { refundCount += log.qty; });
 
-    const rangeStr = shiftStartTime ? ` (Opened: ${shiftStartTime})` : '';
+    let rangeStr = shiftStartTime ? ` (Opened: ${shiftStartTime})` : '';
     let html = `
         <div style="font-size:13px; margin-bottom:12px; color:var(--text-muted);">
             <div style="font-size:11px; font-weight:700; color:var(--primary); margin-bottom:6px;">${rangeStr}</div>
@@ -438,7 +464,7 @@ function updateLiveBreakdown() {
         <table style="width:100%; font-size:13px; color:var(--text-main); border-collapse:collapse;">
     `;
 
-    const categoryOrder = ["Rice", "Curry", "Bread", "Others"];
+    let categoryOrder = ["Rice", "Curry", "Bread", "Others"];
     categoryOrder.forEach(cat => {
         let catHeaderAdded = false;
         for (let item in itemTotals) {
@@ -469,10 +495,10 @@ function renderLogs() {
     }
     
     for (let i = currentDayLog.length - 1; i >= 0; i--) {
-        const log = currentDayLog[i];
-        const customerDisplay = log.customer ? `<div style="font-size:11px; color:var(--primary); font-weight:700;">Profile Account: ${log.customer}</div>` : '';
-        const itemWeightKg = ((log.qty * getItemWeight(log.item)) / 1000).toFixed(2);
-        const row = `<tr>
+        let log = currentDayLog[i];
+        let customerDisplay = log.customer ? `<div style="font-size:11px; color:var(--primary); font-weight:700;">Profile Account: ${log.customer}</div>` : '';
+        let itemWeightKg = ((log.qty * getItemWeight(log.item)) / 1000).toFixed(2);
+        let row = `<tr>
             <td style="color:var(--text-muted); font-weight:500;">${log.time}</td>
             <td><div style="font-weight:600; color:var(--text-main);">${log.item}</div>${customerDisplay}</td>
             <td style="text-align:center; font-weight:700; color:var(--primary);">x${log.qty}<br><span style="font-size:10px; color:var(--text-muted); font-weight:normal;">${itemWeightKg} KG</span></td>
@@ -482,37 +508,41 @@ function renderLogs() {
     }
 
     const refundBody = document.getElementById('refund-log');
-    if (!refundBody) return;
-    refundBody.innerHTML = '';
-    
-    if (currentRefundLog.length === 0) { 
-        refundBody.innerHTML = `<tr><td colspan="3" style="text-align:center; color:#94a3b8; padding:20px; font-size:13px;">No historical void signals logs generated.</td></tr>`; 
-    }
-    
-    for (let j = currentRefundLog.length - 1; j >= 0; j--) {
-        const rLog = currentRefundLog[j];
-        const itemWeightKg = ((rLog.qty * getItemWeight(rLog.item)) / 1000).toFixed(2);
-        const row = `<tr>
-            <td style="color:var(--danger); font-weight:500;">${rLog.time}</td>
-            <td style="font-weight:600; color:var(--text-muted); text-decoration: line-through;">${rLog.item}</td>
-            <td style="text-align:center; font-weight:700; color:var(--danger);">x${rLog.qty}<br><span style="font-size:10px; font-weight:normal;">-${itemWeightKg} KG</span></td>
-        </tr>`;
-        refundBody.insertAdjacentHTML('beforeend', row);
+    if (refundBody) {
+        refundBody.innerHTML = '';
+        if (currentRefundLog.length === 0) { 
+            refundBody.innerHTML = `<tr><td colspan="3" style="text-align:center; color:#94a3b8; padding:20px; font-size:13px;">No historical void signals logs generated.</td></tr>`; 
+        }
+        
+        for (let j = currentRefundLog.length - 1; j >= 0; j--) {
+            let rLog = currentRefundLog[j];
+            let itemWeightKg = ((rLog.qty * getItemWeight(rLog.item)) / 1000).toFixed(2);
+            let row = `<tr>
+                <td style="color:var(--danger); font-weight:500;">${rLog.time}</td>
+                <td style="font-weight:600; color:var(--text-muted); text-decoration: line-through;">${rLog.item}</td>
+                <td style="text-align:center; font-weight:700; color:var(--danger);">x${rLog.qty}<br><span style="font-size:10px; font-weight:normal;">-${itemWeightKg} KG</span></td>
+            </tr>`;
+            refundBody.insertAdjacentHTML('beforeend', row);
+        }
     }
 
     updateLiveBreakdown();
+    renderHistoryTabContent();
+}
 
+function renderHistoryTabContent() {
     const histContainer = document.getElementById('history-container');
     if (!histContainer) return;
     histContainer.innerHTML = '';
     
     if (allTimeHistory.length === 0) { 
         histContainer.innerHTML = '<p style="color:#94a3b8; text-align:center; font-size:14px; padding-top:20px; width:100%;">Vault ledger history index empty array structure.</p>'; 
+        return;
     }
     
     allTimeHistory.forEach((day, index) => {
-        const normalizedDateLabel = normalizeToSystemDate(day.date);
-        const rangeSuffix = (day.startTime && day.endTime) ? ` (${day.startTime} to ${day.endTime})` : '';
+        let normalizedDateLabel = normalizeToSystemDate(day.date);
+        let rangeSuffix = (day.startTime && day.endTime) ? ` (${day.startTime} to ${day.endTime})` : '';
 
         let html = `<div class="history-card">
             <button class="delete-history-btn" onclick="deleteHistoryItem(${index})">×</button>
@@ -526,7 +556,7 @@ function renderLogs() {
             </div>
             <table style="width:100%; font-size:13px; color:#475569;">`;
         
-        const categoryOrder = ["Rice", "Curry", "Bread", "Others"];
+        let categoryOrder = ["Rice", "Curry", "Bread", "Others"];
         categoryOrder.forEach(cat => {
             let catHeaderAdded = false;
             for (let itm in day.summary) {
@@ -545,9 +575,9 @@ function renderLogs() {
         if (day.detailedTimeline && day.detailedTimeline.length > 0) {
             html += `<div style="font-weight:700; font-size:11px; margin-top:12px; color:var(--text-muted); text-transform:uppercase; border-top: 1px dashed var(--border); padding-top: 8px;">Chronological Action Log Flow</div><div class="timeline-box">`;
             day.detailedTimeline.forEach(t => {
-                const styleRule = t.type === 'REFUND' ? 'color:var(--danger); font-weight:700;' : 'color:var(--text-main);';
-                const nameSuffix = t.customer ? ` (${t.customer})` : '';
-                const wCalc = ((t.qty * getItemWeight(t.item)) / 1000).toFixed(2);
+                let styleRule = t.type === 'REFUND' ? 'color:var(--danger); font-weight:700;' : 'color:var(--text-main);';
+                let nameSuffix = t.customer ? ` (${t.customer})` : '';
+                let wCalc = ((t.qty * getItemWeight(t.item)) / 1000).toFixed(2);
                 html += `<div style="margin-bottom:4px; ${styleRule}">[${t.time}] ${t.type}: ${t.item}${nameSuffix} x${t.qty} (${wCalc} KG)</div>`;
             });
             html += `</div>`;
@@ -557,32 +587,24 @@ function renderLogs() {
     });
 }
 
+// --- LOG VOID TERMINATION EXECUTIONS ---
 function refundLogItem(index) {
     if (!confirm("Execute target data structure mutation termination override script?")) return;
-    
-    if (typeof openPinModal === "function") {
-        openPinModal("Verification authorization protocols requested.", "refund", function() {
-            executeRefund(index);
-        });
-    } else {
-        executeRefund(index);
-    }
-}
-
-function executeRefund(index) {
-    const now = new Date();
-    const refundTime = now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-    const targetItem = currentDayLog[index];
-    
-    const refundObject = { time: refundTime, item: targetItem.item, qty: targetItem.qty, customer: targetItem.customer || "Walk-In" };
-    currentRefundLog.push(refundObject);
-    localStorage.setItem('currentRefundLog', JSON.stringify(currentRefundLog));
-    
-    currentDayLog.splice(index, 1);
-    localStorage.setItem('currentDayLog', JSON.stringify(currentDayLog));
-    
-    renderLogs();
-    printSingleRefundToken(refundObject);
+    openPinModal("Verification authorization protocols requested.", "refund", function() {
+        let now = new Date();
+        let refundTime = now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        let targetItem = currentDayLog[index];
+        
+        let refundObject = { time: refundTime, item: targetItem.item, qty: targetItem.qty, customer: targetItem.customer || "Walk-In" };
+        currentRefundLog.push(refundObject);
+        localStorage.setItem('currentRefundLog', JSON.stringify(currentRefundLog));
+        
+        currentDayLog.splice(index, 1);
+        localStorage.setItem('currentDayLog', JSON.stringify(currentDayLog));
+        
+        renderLogs();
+        printSingleRefundToken(refundObject);
+    });
 }
 
 function printSingleRefundToken(refundObj) {
@@ -590,9 +612,9 @@ function printSingleRefundToken(refundObj) {
     if (!printArea) return;
     printArea.innerHTML = '';
     
-    const token = document.createElement('div');
+    let token = document.createElement('div');
     token.className = 'pos-token';
-    const weightStr = ((refundObj.qty * getItemWeight(refundObj.item)) / 1000).toFixed(2);
+    let weightStr = ((refundObj.qty * getItemWeight(refundObj.item)) / 1000).toFixed(2);
     token.innerHTML = `
         <div class="brand-main">AHMED HANIF RAJPUT</div>
         <div style="font-size: 14px; font-weight: 900; text-align: center; color: #ffffff !important; background-color: #000000 !important; padding: 2px 0; margin: 4px 0;">[ VOID CANCEL ]</div>
@@ -609,25 +631,20 @@ function printSingleRefundToken(refundObj) {
     setTimeout(() => { window.print(); printArea.innerHTML = ''; }, 50);
 }
 
+// --- THERMAL REPORT COMPONENT BUILDERS ---
 function printSummaryReport(index) {
     const day = allTimeHistory[index];
     const printArea = document.getElementById('print-area');
-    if (!day || !printArea) return;
+    if (!printArea || !day) return;
     printArea.innerHTML = '';
     
-    let topItem = "None"; 
-    let maxQty = 0;
-    for (let itm in day.summary) { 
-        if (day.summary[itm] > maxQty) { 
-            maxQty = day.summary[itm]; 
-            topItem = itm; 
-        } 
-    }
+    let topItem = "None"; let maxQty = 0;
+    for (let itm in day.summary) { if (day.summary[itm] > maxQty) { maxQty = day.summary[itm]; topItem = itm; } }
     
-    const reportDiv = document.createElement('div');
+    let reportDiv = document.createElement('div');
     reportDiv.className = 'pos-report';
     let itemsHtml = '';
-    const categoryOrder = ["Rice", "Curry", "Bread", "Others"];
+    let categoryOrder = ["Rice", "Curry", "Bread", "Others"];
     
     categoryOrder.forEach(cat => {
         let catHeaderPrinted = false;
@@ -643,7 +660,7 @@ function printSummaryReport(index) {
         }
     });
     
-    const timeRangeTitle = (day.startTime && day.endTime) ? `${day.startTime} TO ${day.endTime}` : 'SHIFT REPORT';
+    let timeRangeTitle = (day.startTime && day.endTime) ? `${day.startTime} TO ${day.endTime}` : 'SHIFT REPORT';
     reportDiv.innerHTML = `
         <div class="brand-main">AHMED HANIF RAJPUT</div>
         <div class="report-title">SHIFT ANALYSIS METRICS</div>
@@ -677,10 +694,9 @@ function executeTokenPrinting(customerName) {
     const printArea = document.getElementById('print-area');
     if (!printArea) return;
     printArea.innerHTML = ''; 
-    
-    const now = new Date();
-    const timeStr = now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-    const dateStr = getFormattedSystemDate(now);
+    let now = new Date();
+    let timeStr = now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+    let dateStr = getFormattedSystemDate(now);
 
     if (!shiftStartTime) {
         shiftStartTime = timeStr;
@@ -688,10 +704,10 @@ function executeTokenPrinting(customerName) {
     }
 
     for (let item in currentCart) {
-        const qty = currentCart[item];
+        let qty = currentCart[item];
         currentDayLog.push({ time: timeStr, item: item, qty: qty, customer: customerName });
         
-        const token = document.createElement('div');
+        let token = document.createElement('div');
         token.className = 'pos-token';
         token.innerHTML = `
             <div class="brand-main">AHMED HANIF RAJPUT</div>
@@ -715,132 +731,85 @@ function executeTokenPrinting(customerName) {
     }, 50);
 }
 
+// --- TERMINAL LIFECYCLE MANAGEMENT ---
 function deleteHistoryItem(index) {
     if (!confirm("Permanently drop selected ledger sequence index container?")) return;
-    
-    if (typeof openPinModal === "function") {
-        openPinModal("Management authentication validation parameters active.", "admin", function() {
-            allTimeHistory.splice(index, 1);
-            localStorage.setItem('allTimeHistory', JSON.stringify(allTimeHistory));
-            renderLogs();
-        });
-    } else {
+    openPinModal("Management authentication validation parameters active.", "admin", function() {
         allTimeHistory.splice(index, 1);
         localStorage.setItem('allTimeHistory', JSON.stringify(allTimeHistory));
         renderLogs();
-    }
+    });
 }
 
 function clearAllHistory() {
     if (!confirm("Purge entire core relational historical index architecture? Warning: Action is terminal.")) return;
-    
-    if (typeof openPinModal === "function") {
-        openPinModal("Administrative security credentials requested.", "admin", function() {
-            allTimeHistory = [];
-            localStorage.setItem('allTimeHistory', JSON.stringify(allTimeHistory));
-            renderLogs();
-        });
-    } else {
+    openPinModal("Administrative security credentials requested.", "admin", function() {
         allTimeHistory = [];
         localStorage.setItem('allTimeHistory', JSON.stringify(allTimeHistory));
         renderLogs();
-    }
+    });
 }
 
 function attemptStartNewDay() {
-    if (typeof openPinModal === "function") {
-        openPinModal("Enter Mandatory Master Access Code to Open New Day Block", "admin", function() {
-            startNewDay();
-            alert("New operational tracking register open.");
-        });
-    } else {
+    openPinModal("Enter Mandatory Master Access Code to Open New Day Block", "admin", function() {
         startNewDay();
-    }
+        alert("New operational tracking register open.");
+    });
 }
 
 function startNewDay() {
-    currentDayLog = []; 
-    currentRefundLog = []; 
-    shiftStartTime = null;
-    
-    localStorage.removeItem('currentDayLog'); 
-    localStorage.removeItem('currentRefundLog'); 
-    localStorage.removeItem('shiftStartTime');
-    
-    currentCart = {}; 
-    renderCart(); 
-    renderLogs(); 
-    if (typeof switchView === "function") switchView('pos-tab');
+    currentDayLog = []; currentRefundLog = []; shiftStartTime = null;
+    localStorage.removeItem('currentDayLog'); localStorage.removeItem('currentRefundLog'); localStorage.removeItem('shiftStartTime');
+    currentCart = {}; renderCart(); renderLogs(); switchView('pos-tab');
 }
 
 function endDay() {
-    if (currentDayLog.length === 0 && currentRefundLog.length === 0) {
-        return alert("System state queue registry matrices isolated as null.");
-    }
+    if (currentDayLog.length === 0 && currentRefundLog.length === 0) return alert("System state queue registry matrices isolated as null.");
     if (!confirm("Terminate current operational runtime cycle window parameters and shift dataset structures?")) return;
-    
-    if (typeof openPinModal === "function") {
-        openPinModal("Administrative security checkpoint logic verified execution keys.", "admin", function() {
-            processEndDay();
+    openPinModal("Administrative security checkpoint logic verified execution keys.", "admin", function() {
+        let netItems = 0; let grossItemsCount = 0; let summary = {}; let detailedTimeline = [];
+
+        currentDayLog.forEach(log => { 
+            netItems += log.qty; grossItemsCount += log.qty;
+            summary[log.item] = (summary[log.item] || 0) + log.qty; 
+            detailedTimeline.push({time: log.time, type: 'SALE', item: log.item, qty: log.qty, customer: log.customer});
         });
-    } else {
-        processEndDay();
-    }
+        currentRefundLog.forEach(log => {
+            grossItemsCount += log.qty;
+            detailedTimeline.push({time: log.time, type: 'REFUND', item: log.item, qty: log.qty, customer: log.customer || "Walk-In"});
+        });
+        
+        detailedTimeline.sort((a, b) => b.time.localeCompare(a.time));
+        
+        let shiftClosingTime = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        let shiftOpeningTime = shiftStartTime || (currentDayLog.length > 0 ? currentDayLog[0].time : shiftClosingTime);
+        let shiftClosingTimestamp = getFormattedSystemDate();
+        
+        let dayRecord = { 
+            date: shiftClosingTimestamp, 
+            startTime: shiftOpeningTime,
+            endTime: shiftClosingTime,
+            totalItems: netItems, 
+            grossItems: grossItemsCount,
+            refundedItems: currentRefundLog.length, 
+            summary: summary, 
+            detailedTimeline: detailedTimeline
+        };
+        allTimeHistory.push(dayRecord);
+        localStorage.setItem('allTimeHistory', JSON.stringify(allTimeHistory));
+        
+        currentDayLog = []; currentRefundLog = []; shiftStartTime = null;
+        localStorage.removeItem('currentDayLog'); localStorage.removeItem('currentRefundLog'); localStorage.removeItem('shiftStartTime');
+        
+        renderLogs();
+        switchView('history-tab');
+    });
 }
 
-function processEndDay() {
-    let netItems = 0; 
-    let grossItemsCount = 0; 
-    let summary = {}; 
-    let detailedTimeline = [];
-
-    currentDayLog.forEach(log => { 
-        netItems += log.qty; 
-        grossItemsCount += log.qty;
-        summary[log.item] = (summary[log.item] || 0) + log.qty; 
-        detailedTimeline.push({time: log.time, type: 'SALE', item: log.item, qty: log.qty, customer: log.customer});
-    });
-    
-    currentRefundLog.forEach(log => {
-        grossItemsCount += log.qty;
-        detailedTimeline.push({time: log.time, type: 'REFUND', item: log.item, qty: log.qty, customer: log.customer || "Walk-In"});
-    });
-    
-    detailedTimeline.sort((a, b) => b.time.localeCompare(a.time));
-    
-    const shiftClosingTime = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-    const shiftOpeningTime = shiftStartTime || (currentDayLog.length > 0 ? currentDayLog[0].time : shiftClosingTime);
-    const shiftClosingTimestamp = getFormattedSystemDate();
-    
-    const dayRecord = { 
-        date: shiftClosingTimestamp, 
-        startTime: shiftOpeningTime,
-        endTime: shiftClosingTime,
-        totalItems: netItems, 
-        grossItems: grossItemsCount,
-        refundedItems: currentRefundLog.length, 
-        summary: summary, 
-        detailedTimeline: detailedTimeline
-    };
-    allTimeHistory.push(dayRecord);
-    localStorage.setItem('allTimeHistory', JSON.stringify(allTimeHistory));
-    
-    currentDayLog = []; 
-    currentRefundLog = []; 
-    shiftStartTime = null;
-    
-    localStorage.removeItem('currentDayLog'); 
-    localStorage.removeItem('currentRefundLog'); 
-    localStorage.removeItem('shiftStartTime');
-    
-    renderLogs();
-    if (typeof switchView === "function") switchView('history-tab');
-}
-
+// --- CONSUMPTION ANALYTICS SHEET GENERATORS ---
 function getAllConsumptionData() {
-    const rows = [];
-    const liveLabel = getFormattedSystemDate();
-    
+    let rows = [];
+    let liveLabel = getFormattedSystemDate();
     currentDayLog.forEach(l => {
         rows.push({ date: liveLabel, shiftId: "LIVE", time: l.time, customer: l.customer || "Walk-In", item: l.item, qty: l.qty, type: "SALE" });
     });
@@ -850,7 +819,7 @@ function getAllConsumptionData() {
     allTimeHistory.forEach((day, idx) => {
         if (day.detailedTimeline) {
             day.detailedTimeline.forEach(t => {
-                const rangeStr = (day.startTime && day.endTime) ? ` [${day.startTime}-${day.endTime}]` : '';
+                let rangeStr = (day.startTime && day.endTime) ? ` [${day.startTime}-${day.endTime}]` : '';
                 rows.push({ date: normalizeToSystemDate(day.date) + rangeStr, shiftId: `SHIFT-${idx}`, time: t.time, customer: t.customer || "Walk-In", item: t.item, qty: t.qty, type: t.type });
             });
         }
@@ -859,46 +828,39 @@ function getAllConsumptionData() {
 }
 
 function populateFilterOptions() {
-    const data = getAllConsumptionData();
-    const customers = new Set(); 
-    const items = new Set(); 
-    const dates = new Set();
-    
+    let data = getAllConsumptionData();
+    let customers = new Set(); let items = new Set(); let dates = new Set();
     data.forEach(r => {
         if (r.customer) customers.add(r.customer);
         if (r.item) items.add(r.item);
         if (r.date) dates.add(r.date);
     });
     
-    const custSel = document.getElementById('filter-cust');
-    const itemSel = document.getElementById('filter-item');
-    const dateSel = document.getElementById('filter-date');
+    let custSel = document.getElementById('filter-cust');
+    let itemSel = document.getElementById('filter-item');
+    let dateSel = document.getElementById('filter-date');
+    if (!custSel || !itemSel || !dateSel) return;
+
+    custSel.innerHTML = '<option value="ALL">-- All Registry Profiles --</option>';
+    itemSel.innerHTML = '<option value="ALL">-- All Menu Labels --</option>';
+    dateSel.innerHTML = '<option value="ALL">-- All Epoch Shifts --</option>';
     
-    if (custSel) {
-        custSel.innerHTML = '<option value="ALL">-- All Registry Profiles --</option>';
-        customers.forEach(c => custSel.innerHTML += `<option value="${c}">${c}</option>`);
-    }
-    if (itemSel) {
-        itemSel.innerHTML = '<option value="ALL">-- All Menu Labels --</option>';
-        items.forEach(i => itemSel.innerHTML += `<option value="${i}">${i}</option>`);
-    }
-    if (dateSel) {
-        dateSel.innerHTML = '<option value="ALL">-- All Epoch Shifts --</option>';
-        dates.forEach(d => dateSel.innerHTML += `<option value="${d}">${d}</option>`);
-    }
+    customers.forEach(c => custSel.innerHTML += `<option value="${c}">${c}</option>`);
+    items.forEach(i => itemSel.innerHTML += `<option value="${i}">${i}</option>`);
+    dates.forEach(d => dateSel.innerHTML += `<option value="${d}">${d}</option>`);
 }
 
 function populateShiftSelectorOptions() {
-    const selector = document.getElementById('rule-shift-selector');
+    let selector = document.getElementById('rule-shift-selector');
     if (!selector) return;
-    const currentSelection = selector.value;
+    let currentSelection = selector.value;
     
-    const liveRange = shiftStartTime ? ` (Opened: ${shiftStartTime})` : ' (Matrix structural space null)';
+    let liveRange = shiftStartTime ? ` (Opened: ${shiftStartTime})` : ' (Matrix structural space null)';
     selector.innerHTML = `<option value="LIVE">Active Operational Runtime Engine Segment${liveRange}</option>`;
     
     allTimeHistory.forEach((day, idx) => {
-        const label = normalizeToSystemDate(day.date);
-        const timeStr = (day.startTime && day.endTime) ? ` (${day.startTime} to ${day.endTime})` : '';
+        let label = normalizeToSystemDate(day.date);
+        let timeStr = (day.startTime && day.endTime) ? ` (${day.startTime} to ${day.endTime})` : '';
         selector.innerHTML += `<option value="SHIFT-${idx}">Ledger Segment: ${label}${timeStr}</option>`;
     });
 
@@ -910,39 +872,40 @@ function populateShiftSelectorOptions() {
 }
 
 function calculateHighConsumptionMatrix(data) {
-    const shiftSelector = document.getElementById('rule-shift-selector');
-    const tbody = document.getElementById('high-consumption-tbody');
-    if (!shiftSelector || !tbody) return;
+    let selector = document.getElementById('rule-shift-selector');
+    if (!selector) return;
+    let selectedShift = selector.value;
 
-    const selectedShift = shiftSelector.value;
-    const riceVal = document.getElementById('rule-rice-limit').value.trim();
-    const curryVal = document.getElementById('rule-curry-limit').value.trim();
-    const breadVal = document.getElementById('rule-bread-limit').value.trim();
+    let riceVal = document.getElementById('rule-rice-limit').value.trim();
+    let curryVal = document.getElementById('rule-curry-limit').value.trim();
+    let breadVal = document.getElementById('rule-bread-limit').value.trim();
 
-    const riceLimit = riceVal !== "" ? parseInt(riceVal, 10) : null;
-    const curryLimit = curryVal !== "" ? parseInt(curryVal, 10) : null;
-    const breadLimit = breadVal !== "" ? parseInt(breadVal, 10) : null;
+    let riceLimit = riceVal !== "" ? parseInt(riceVal) : null;
+    let curryLimit = curryVal !== "" ? parseInt(curryVal) : null;
+    let breadLimit = breadVal !== "" ? parseInt(breadVal) : null;
 
-    const aggregation = {};
+    let aggregation = {};
     
     data.forEach(r => {
         if (r.shiftId !== selectedShift) return;
         if (r.type !== 'SALE' || r.customer === 'Walk-In') return;
         
-        const cat = getItemCategory(r.item);
-        const key = `${r.customer}||${r.item}||${cat}`;
+        let cat = getItemCategory(r.item);
+        let key = `${r.customer}||${r.item}||${cat}`;
         aggregation[key] = (aggregation[key] || 0) + r.qty;
     });
     
+    let tbody = document.getElementById('high-consumption-tbody');
+    if (!tbody) return;
     tbody.innerHTML = '';
     let anomaliesFound = false;
 
     for (let key in aggregation) {
-        const [customer, item, category] = key.split('||');
-        const totalQty = aggregation[key];
+        let [customer, item, category] = key.split('||');
+        let totalQty = aggregation[key];
         let shouldFlag = false; 
         let alertMsg = "";
-        const calculatedW = ((totalQty * getItemWeight(item)) / 1000).toFixed(2);
+        let calculatedW = ((totalQty * getItemWeight(item)) / 1000).toFixed(2);
 
         if (category === "Rice" && riceLimit !== null && totalQty >= riceLimit) {
             shouldFlag = true;
@@ -957,7 +920,7 @@ function calculateHighConsumptionMatrix(data) {
         
         if (shouldFlag) {
             anomaliesFound = true;
-            const tr = `<tr>
+            let tr = `<tr>
                 <td style="font-weight:700; color:var(--text-main);">${customer}</td>
                 <td>${item}</td>
                 <td style="font-weight:600; color:var(--primary);">${category}</td>
@@ -974,22 +937,17 @@ function calculateHighConsumptionMatrix(data) {
 }
 
 function renderConsumptionReport() {
-    const data = getAllConsumptionData();
+    let data = getAllConsumptionData();
     calculateHighConsumptionMatrix(data);
     
-    const custFilter = document.getElementById('filter-cust');
-    const itemFilter = document.getElementById('filter-item');
-    const dateFilter = document.getElementById('filter-date');
-    const tbody = document.getElementById('consumption-report-tbody');
-    
-    if (!custFilter || !itemFilter || !dateFilter || !tbody) return;
-    
-    const fCust = custFilter.value;
-    const fItem = itemFilter.value;
-    const fDate = dateFilter.value;
+    let fCust = document.getElementById('filter-cust')?.value || "ALL";
+    let fItem = document.getElementById('filter-item')?.value || "ALL";
+    let fDate = document.getElementById('filter-date')?.value || "ALL";
+    let tbody = document.getElementById('consumption-report-tbody');
+    if (!tbody) return;
     tbody.innerHTML = '';
 
-    const filtered = data.filter(r => {
+    let filtered = data.filter(r => {
         if (fCust !== "ALL" && r.customer !== fCust) return false;
         if (fItem !== "ALL" && r.item !== fItem) return false;
         if (fDate !== "ALL" && r.date !== fDate) return false;
@@ -1002,14 +960,14 @@ function renderConsumptionReport() {
     }
     
     filtered.forEach(r => {
-        const statusStyle = r.type === 'REFUND' ? 'color:var(--danger); font-weight:700; background:#fee2e2; padding:4px 8px; border-radius:4px;' : 'color:var(--accent); font-weight:700; background:#dcfce7; padding:4px 8px; border-radius:4px;';
-        const qtyStyle = r.type === 'REFUND' ? 'color:var(--danger); font-weight:700; text-align:right;' : 'font-weight:700; text-align:right;';
-        const displayQty = r.type === 'REFUND' ? `-${r.qty}` : r.qty;
-        const calcWeightKg = ((r.qty * getItemWeight(r.item)) / 1000).toFixed(2);
-        const displayWeight = r.type === 'REFUND' ? `-${calcWeightKg}` : calcWeightKg;
-        const dateTimeDisplay = `${r.date}, ${r.time || 'N/A'}`;
+        let statusStyle = r.type === 'REFUND' ? 'color:var(--danger); font-weight:700; background:#fee2e2; padding:4px 8px; border-radius:4px;' : 'color:var(--accent); font-weight:700; background:#dcfce7; padding:4px 8px; border-radius:4px;';
+        let qtyStyle = r.type === 'REFUND' ? 'color:var(--danger); font-weight:700; text-align:right;' : 'font-weight:700; text-align:right;';
+        let displayQty = r.type === 'REFUND' ? `-${r.qty}` : r.qty;
+        let calcWeightKg = ((r.qty * getItemWeight(r.item)) / 1000).toFixed(2);
+        let displayWeight = r.type === 'REFUND' ? `-${calcWeightKg}` : calcWeightKg;
+        let dateTimeDisplay = `${r.date}, ${r.time || 'N/A'}`;
 
-        const tr = `<tr>
+        let tr = `<tr>
             <td style="font-weight: 500; color: var(--text-muted);">${dateTimeDisplay}</td>
             <td style="font-weight:600;">${r.customer}</td>
             <td>${r.item}</td>
@@ -1023,71 +981,106 @@ function renderConsumptionReport() {
 
 function handleCustomerSearchFilter() {
     const searchInput = document.getElementById('customer-search-input');
-    if (!searchInput) return;
-    activeCustomerSearchQuery = searchInput.value.trim().toLowerCase();
-    if (typeof renderCustomerManagement === "function") renderCustomerManagement();
+    if (searchInput) activeCustomerSearchQuery = searchInput.value.trim().toLowerCase();
+    renderCustomerManagement();
+}
+
+function renderCustomerManagement() {
+    const listBody = document.getElementById('customer-management-tbody');
+    if (!listBody) return;
+    listBody.innerHTML = '';
+
+    let filteredCustomers = knownCustomers.filter(c => c.toLowerCase().includes(activeCustomerSearchQuery));
+
+    if (filteredCustomers.length === 0) {
+        listBody.innerHTML = `<tr><td colspan="3" style="text-align:center; color:var(--text-muted);">No records identified.</td></tr>`;
+        return;
+    }
+
+    filteredCustomers.forEach(customer => {
+        let idx = knownCustomers.indexOf(customer);
+        let tr = `<tr>
+            <td style="font-weight:600;">${customer}</td>
+            <td style="text-align:right;">
+                <button class="btn-action-small btn-edit" onclick="editCustomer(${idx})">Edit Name</button>
+                <button class="btn-action-small btn-refund" onclick="deleteCustomer(${idx})">Delete</button>
+            </td>
+        </tr>`;
+        listBody.insertAdjacentHTML('beforeend', tr);
+    });
 }
 
 function clearConsumptionFilters() {
-    const custFilter = document.getElementById('filter-cust');
-    const itemFilter = document.getElementById('filter-item');
-    const dateFilter = document.getElementById('filter-date');
-    
-    if (custFilter) custFilter.value = "ALL";
-    if (itemFilter) itemFilter.value = "ALL";
-    if (dateFilter) dateFilter.value = "ALL";
-    
+    document.getElementById('filter-cust').value = "ALL";
+    document.getElementById('filter-item').value = "ALL";
+    document.getElementById('filter-date').value = "ALL";
     renderConsumptionReport();
 }
 
 function exportConsumptionToCSV() {
-    const data = getAllConsumptionData();
+    let data = getAllConsumptionData();
     if (data.length === 0) return alert("Structural target storage layer empty.");
-    
     let csvContent = "data:text/csv;charset=utf-8,Timestamp Block Node,Profile Mapping ID,Menu Label,Quantity Scalar,Retroactive Weight Metric(KG),State Vector\n";
     data.forEach(r => {
-        const val = r.type === 'REFUND' ? `-${r.qty}` : r.qty;
-        const wVal = ((r.qty * getItemWeight(r.item)) / 1000).toFixed(2);
-        const wStr = r.type === 'REFUND' ? `-${wVal}` : wVal;
+        let val = r.type === 'REFUND' ? `-${r.qty}` : r.qty;
+        let wVal = ((r.qty * getItemWeight(r.item)) / 1000).toFixed(2);
+        let wStr = r.type === 'REFUND' ? `-${wVal}` : wVal;
         csvContent += `"${r.date}, ${r.time || 'N/A'}","${r.customer}","${r.item}",${val},${wStr},"${r.type}"\n`;
     });
-    
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
+    let encodedUri = encodeURI(csvContent);
+    let link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `Shift_Matrix_Report_${new Date().toISOString().slice(0,10)}.csv`);
+    link.setAttribute("download", `Shift_Matrix_Report_${getFormattedSystemDate()}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
 }
 
-// Operational DOM Global Event Key Bindings UI Hooks Initialization Block
-document.addEventListener("DOMContentLoaded", () => {
-    const modalPinInput = document.getElementById('modal-pin-input');
-    if (modalPinInput) {
-        modalPinInput.addEventListener('keypress', function(e) { 
-            if (e.key === 'Enter' && typeof submitPinModal === "function") submitPinModal(); 
-        });
-    }
+function populateCustomerDatalist() {
+    const list = document.getElementById('known-customers-datalist');
+    if (!list) return;
+    list.innerHTML = '';
+    knownCustomers.forEach(c => {
+        list.innerHTML += `<option value="${c}">`;
+    });
+}
 
-    const custModalInput = document.getElementById('cust-modal-name-input');
-    if (custModalInput) {
-        custModalInput.addEventListener('keypress', function(e) { 
-            if (e.key === 'Enter') submitCustomerModal(); 
-        });
-    }
+// --- GLOBAL VIEW SWITCHER ENGINE ---
+function switchView(tabId) {
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+    
+    const targetContent = document.getElementById(tabId);
+    if (targetContent) targetContent.classList.add('active');
+    
+    // Find button pointing to this tab
+    const targetBtn = document.querySelector(`button[onclick="switchView('${tabId}')"]`);
+    if (targetBtn) targetBtn.classList.add('active');
 
-    const manualCustomerInput = document.getElementById('new-manual-customer');
-    if (manualCustomerInput) {
-        manualCustomerInput.addEventListener('keypress', function(e) { 
-            if (e.key === 'Enter') addCustomerManually(); 
-        });
+    // Dynamic Context View Loading
+    if (tabId === 'analytics-tab') {
+        populateFilterOptions();
+        populateShiftSelectorOptions();
+        renderConsumptionReport();
     }
+    if (tabId === 'customer-tab') {
+        renderCustomerManagement();
+    }
+    if (tabId === 'menu-tab') {
+        renderMenuWeightsManagement();
+    }
+}
 
-    // Bootstrap Initial Runtime Startup Sequence Loop Triggers
+// --- BOOTSTRAP INITIAL STARTUP HOOKS ---
+document.addEventListener("DOMContentLoaded", function() {
+    // Event Key Handlers Setup Safely
+    document.getElementById('modal-pin-input')?.addEventListener('keypress', function(e) { if (e.key === 'Enter') submitPinModal(); });
+    document.getElementById('cust-modal-name-input')?.addEventListener('keypress', function(e) { if (e.key === 'Enter') submitCustomerModal(); });
+    document.getElementById('new-manual-customer')?.addEventListener('keypress', function(e) { if (e.key === 'Enter') addCustomerManually(); });
+
+    // Initial Engine Kickstart
     renderCategoryFilters();
     renderMenu();
     renderLogs();
-    
-    if (typeof populateCustomerDatalist === "function") populateCustomerDatalist();
+    populateCustomerDatalist();
 });
