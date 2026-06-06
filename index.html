@@ -3,38 +3,51 @@
 <head>
     <meta charset="UTF-8">
     <title>AHRP POS TERMINAL</title>
-    <!-- Paste the CSS from my previous message here inside <style> tags -->
+    <style>
+        /* CSS STYLES */
+        body { font-family: sans-serif; margin: 20px; }
+        .tabs-nav { display: flex; gap: 10px; margin-bottom: 20px; }
+        .tab-btn { padding: 10px 20px; cursor: pointer; }
+        .tab-btn.active { background: #007bff; color: white; border: none; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+    </style>
 </head>
 <body>
 
-    <!-- 1. NAVIGATION -->
     <div class="tabs-nav">
         <button class="tab-btn active" onclick="switchView('pos-tab')">Point of Sale</button>
         <button class="tab-btn" onclick="switchView('history-tab')">Archive Ledger</button>
-        <button class="tab-btn" onclick="switchView('analytics-tab')">Consumption Metrics</button>
-        <button class="tab-btn" onclick="switchView('customer-tab')">Profile Management</button>
-        <button class="tab-btn" onclick="switchView('menu-tab')">Menu Configuration</button>
     </div>
 
-    <!-- 2. CONTENT SECTIONS -->
     <div id="pos-tab" class="tab-content active">
-        <!-- POS Grid, Cart, and Log components go here -->
+        <h2>Point of Sale</h2>
+        <p>POS interface will load here.</p>
     </div>
     
     <div id="history-tab" class="tab-content">
-        <div id="history-container" class="history-grid-layout"></div>
-    </div>
-    
-    <!-- Include other sections (Analytics, Customer, Menu) -->
-
-    <!-- 3. PRINTING LAYER -->
-    <div id="print-area"></div>
-
-    <!-- 4. SECURITY MODALS -->
-    <div id="security-pin-modal" class="modal-overlay">
-        <!-- Modal content -->
+        <h2>Archive Ledger</h2>
+        <p>History will load here.</p>
     </div>
 
-    <!-- Paste the Javascript from my previous message here inside <script> tags -->
+    <script>
+        // JAVASCRIPT LOGIC
+        function switchView(tabId) {
+            // Hide all sections
+            document.querySelectorAll('.tab-content').forEach(section => {
+                section.classList.remove('active');
+            });
+            // Remove active class from buttons
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Show selected section
+            document.getElementById(tabId).classList.add('active');
+            
+            // Set active button
+            event.target.classList.add('active');
+        }
+    </script>
 </body>
 </html>
